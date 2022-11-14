@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 from torch.nn import init
@@ -64,11 +65,9 @@ class MODEL(nn.Module):
 
 		#the classification module
 
-		scores_model, scores_mlp = self.forward(nodes, train_flag)
+		scores_model, _ = self.forward(nodes, train_flag)
 
 		scores_model = scores_model + torch.log(self.prior)
-		scores_mlp = scores_mlp + torch.log(self.prior)
-
 		loss_model = self.xent(scores_model, labels.squeeze())
 		#loss_mlp = self.xent(scores_mlp, labels.squeeze())
 		final_loss = loss_model #+ self.lambda_1 * loss_mlp

@@ -1,11 +1,17 @@
 import time
+import logging
 import argparse
 from sklearn.model_selection import train_test_split
+
+from tqdm import tqdm
 
 from model import MODEL
 from layers import *
 from utlis import *
 #os.environ["CUDA_LAUNCH_BLOCKING"]="0"
+
+# Configure the logger
+logging.basicConfig(level = logging.INFO, format = '%(asctime)s - %(levelname)s - %(message)s')
 
 
 """
@@ -17,14 +23,14 @@ parser = argparse.ArgumentParser()
 
 # dataset and model dependent args
 parser.add_argument('--data', type=str, default='amazon', help='The dataset name. [Amazon_demo, Yelp_demo, amazon,yelp]')
-parser.add_argument('--batch-size', type=int, default=100, help='Batch size 1024 for yelp, 256 for amazon.')
+parser.add_argument('--batch-size', type=int, default=256, help='Batch size 1024 for yelp, 256 for amazon.')
 parser.add_argument('--lr', type=float, default=0.1, help='Initial learning rate. [0.1 for amazon and 0.001 for yelp]')
-parser.add_argument('--lambda_1', type=float, default=1e-4, help='Weight decay (L2 loss weight).')
-parser.add_argument('--embed_dim', type=int, default=64, help='Node embedding size at the first layer.')
-parser.add_argument('--num_epochs', type=int, default=61, help='Number of epochs.')
-parser.add_argument('--test_epochs', type=int, default=10, help='Epoch interval to run test set.')
+parser.add_argument('--lambda-1', type=float, default=1e-4, help='Weight decay (L2 loss weight).')
+parser.add_argument('--embed-dim', type=int, default=64, help='Node embedding size at the first layer.')
+parser.add_argument('--num-epochs', type=int, default=61, help='Number of epochs.')
+parser.add_argument('--test-epochs', type=int, default=10, help='Epoch interval to run test set.')
 parser.add_argument('--seed', type=int, default=123, help='Random seed.')
-parser.add_argument('--no_cuda', action='store_true', default=False, help='Disables CUDA training.')
+parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
 
 if(torch.cuda.is_available()):
 	print("cuda is available")
@@ -38,7 +44,7 @@ if(args.cuda):
 print(f'run on {args.data}')
 
 # load topology, feature, and label
-homo, relation1, relation2, relation3, feat_data, labels = load_data(args.data)
+_, relation1, relation2, relation3, feat_data, labels = load_data(args.data)
 
 # set seed
 np.random.seed(args.seed)
@@ -65,6 +71,7 @@ if args.data == 'yelp':
 		prior = (torch.from_numpy(prior +1e-8)).cuda()
 	else:
 		prior = (torch.from_numpy(prior +1e-8))
+	feat_data = normalize(feat_data) 
 
 elif args.data == 'amazon':
 
@@ -72,7 +79,6 @@ elif args.data == 'amazon':
 	index = list(range(3305, len(labels)))
 	idx_train, idx_test, y_train, y_test = train_test_split(index, labels[3305:], stratify = labels[3305:],
 															test_size = 0.90, random_state = 2, shuffle = True)
-
 	num_1 = len(np.where(y_train == 1)[0])
 	num_2 = len(np.where(y_train == 0)[0])
 	p0 = (num_1 / (num_1 + num_2))
@@ -83,18 +89,37 @@ elif args.data == 'amazon':
 	else:
 		prior = (torch.from_numpy(prior +1e-8))
 	#prior = np.array([0.9, 0.1])
+	feat_data = normalize(feat_data) 
 
+elif args.data.lower().startswith('amazon_'):
+	
+	idx_train = feat_data[1].tolist()
+	idx_test = feat_data[2].tolist()
+	feat_data = feat_data[0]
+	# np.delete(feat_data, [x for x in range(25, feat_data.shape[1])], axis=1)
+	# feat_data = normalize(feat_data)
+	y_train = np.array(labels[1])
+	y_test = np.array(labels[2])
+	labels = np.array(labels[0])
+	num_1 = len(np.where(y_train == 1)[0])
+	num_2 = len(np.where(y_train == 0)[0])
+	p0 = (num_1 / (num_1 + num_2))
+	p1 = 1 - p0
+	prior = np.array([p1, p0])
+	if args.cuda:
+		prior = (torch.from_numpy(prior +1e-8)).cuda()
+	else:
+		prior = (torch.from_numpy(prior +1e-8))
 
 # initialize model input
 features = nn.Embedding(feat_data.shape[0], feat_data.shape[1])
-feat_data = normalize(feat_data) 
+
 features.weight = nn.Parameter(torch.FloatTensor(feat_data), requires_grad = False)
 if args.cuda:
 	features.cuda()
 
 # set input graph topology
 adj_lists = [relation1, relation2, relation3]
-
 
 # build model
 
@@ -140,9 +165,7 @@ for epoch in range(args.num_epochs):
 	epoch_time = 0
 
 	#mini-batch training
-	for batch in range(num_batches):
-
-		print(f'Epoch: {epoch}, batch: {batch}')
+	for batch in tqdm(range(num_batches)):
 
 		i_start = batch * args.batch_size
 		i_end = min((batch + 1) * args.batch_size, len(idx_train))

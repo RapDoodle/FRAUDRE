@@ -1,9 +1,12 @@
+import os
 import random
 import numpy as np
 import scipy.sparse as sp
 from scipy.io import loadmat
 from sklearn.metrics import f1_score, recall_score, roc_auc_score, average_precision_score, precision_score
 from collections import defaultdict
+
+from handlers.amazon_stream_data_handler import AmazonStreamDataHandler
 
 def sparse_to_adjlist(sp_matrix):
 
@@ -45,6 +48,27 @@ def load_data(data):
 		relation3 = sparse_to_adjlist(amz['net_uvu'])
 		feat_data = amz['features'].toarray()
 		labels = amz['label'].flatten()
+
+	elif data.lower().startswith('amazon_'):
+
+		t = 12
+		homo = None
+		# datapath = os.path.join('./data', data, 'streams', str(t))
+		amazon_stream_data_handler = AmazonStreamDataHandler(data_name=data)
+		# amazon_stream_data_handler.load(t=t, max_detect_size=0)
+		amazon_stream_data_handler.load_stream(t=t)
+		amazon_stream_data_handler.load_stream_relations(t=t)
+		relation1 = amazon_stream_data_handler.stream_relations['upu']
+		relation2 = amazon_stream_data_handler.stream_relations['usu']
+		relation3 = amazon_stream_data_handler.stream_relations['uvu']
+		
+		feat_data = [amazon_stream_data_handler.stream_features, 
+					 amazon_stream_data_handler.stream_train_nodes, 
+					 amazon_stream_data_handler.stream_val_nodes]
+		lo = amazon_stream_data_handler.stream_stats['lo']
+		hi = amazon_stream_data_handler.stream_stats['hi']
+		
+		labels = [amazon_stream_data_handler.stream_labels, amazon_stream_data_handler.stream_y_train, amazon_stream_data_handler.stream_y_val]
 
 
 	return homo, relation1, relation2, relation3, feat_data, labels
